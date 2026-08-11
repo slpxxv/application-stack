@@ -1,0 +1,43 @@
+name: Deploy infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version tag to deploy, for example v1.2.3
+        required: true
+        type: string
+      rollback_version:
+        description: Known-good version used if readiness fails
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: infrastructure-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    environment: production
+    runs-on: [self-hosted, production]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate host configuration
+        run: |
+          test -f .env
+          set -a
+          . ./.env
+          set +a
+          test -d "${SECRETS_PATH}"
+          docker compose version
+      - name: Deploy selected images with rollback
+        env:
+          OWNER: ${{ github.repository_owner }}
+          VERSION: ${{ inputs.version }}
+          ROLLBACK_VERSION: ${{ inputs.rollback_version }}
+        run: |
+          ./infrastructure/scripts/deploy.sh "$OWNER" "$VERSION" "$ROLLBACK_VERSION"

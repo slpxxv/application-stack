@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare non-secret test configuration
+        run: |
+          cp .env.example .env
+          mkdir -p secrets
+          printf '%s' 'ci-postgres-password' > secrets/postgres_password
+          printf '%s' 'ci-redis-password' > secrets/redis_password
+          printf '%s' '{"redis://redis:6379":"infrastructure:ci-redis-password"}' > secrets/redis_exporter_passwords.json
+          printf '%s' 'ci-rabbitmq-password' > secrets/rabbitmq_password
+          printf '%s' 'ci-grafana-password' > secrets/grafana_admin_password
+
+      - name: Validate Compose models and profiles
+        run: |
+          for environment in local test production; do
+            COMPOSE_PROFILES=proxy,postgres,redis,rabbitmq,monitoring \
+              docker compose --env-file .env \
+              --project-name "infrastructure-${environment}" \
+              -f compose.yaml -f "compose.${environment}.yaml" config --quiet
+          done
+
+      - name: Lint shell scripts
+        uses: ludeeus/action-shellcheck@2.0.0
+
+      - name: Lint Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+
+      - name: Build custom infrastructure images
+        run: docker compose --env-file .env -f compose.yaml -f compose.test.yaml build proxy postgres redis rabbitmq
+
+      - name: Test minimal stateful stack health
+        env:
+          COMPOSE_PROFILES: proxy,postgres,redis,rabbitmq
+        run: ./infrastructure/scripts/test-stack.sh
+
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan repository configuration
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: config
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+      - name: Upload scan report
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
