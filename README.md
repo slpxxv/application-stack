@@ -11,6 +11,7 @@ outside the infrastructure layer.
 - [Quick start](#quick-start)
 - [Environments](#environments)
 - [Service profiles](#service-profiles)
+- [Services and ports](#services-and-ports)
 - [Configuration](#configuration)
 - [Networks](#networks)
 - [Volumes](#volumes)
@@ -20,7 +21,6 @@ outside the infrastructure layer.
 - [Deployment and rollback](#deployment-and-rollback)
 - [Testing and diagnostics](#testing-and-diagnostics)
 - [Troubleshooting](#troubleshooting)
-- [Architecture decision](#architecture-decision)
 - [License](#license)
 
 ## Requirements
@@ -95,6 +95,31 @@ make down ENV=local COMPOSE_PROFILES=postgres,monitoring
 An empty `COMPOSE_PROFILES` value starts no services. Every new service must be
 assigned to the required networks and profile, have a health check where
 possible, and use an explicit volume when it stores data.
+
+## Services and ports
+
+Local host ports bind to `127.0.0.1` and can be changed in `.env`. An em dash
+means that the service is available only to other containers on its Compose
+network and is not published on the host.
+
+| Profile | Service | Container port | Local host port | Purpose |
+| --- | --- | ---: | --- | --- |
+| `proxy` | Nginx | `8080` | `HTTP_PORT` (`8080`) | HTTP entry point and `/healthz` |
+| `postgres` | PostgreSQL | `5432` | `POSTGRES_PORT` (`5432`) | Database connections |
+| `postgres` | postgres-exporter | `9187` | — | Internal Prometheus metrics |
+| `redis` | Redis | `6379` | `REDIS_PORT` (`6379`) | Cache and data connections |
+| `redis` | redis-exporter | `9121` | — | Internal Prometheus metrics |
+| `rabbitmq` | RabbitMQ | `5672` | `RABBITMQ_PORT` (`5672`) | AMQP connections |
+| `rabbitmq` | RabbitMQ management | `15672` | `RABBITMQ_MANAGEMENT_PORT` (`15672`) | Management interface |
+| `rabbitmq` | RabbitMQ metrics | `15692` | — | Internal Prometheus metrics |
+| `monitoring` | Prometheus | `9090` | `PROMETHEUS_PORT` (`9090`) | Metrics and query interface |
+| `monitoring` | Grafana | `3000` | `GRAFANA_PORT` (`3000`) | Dashboards |
+| `monitoring` | Loki | `3100` | — | Internal log storage API |
+| `monitoring` | Alloy | `12345` | — | Internal collector interface |
+| `monitoring` | cAdvisor | `8080` | — | Internal container metrics |
+
+The `test` environment publishes no ports. The `production` environment
+publishes only Nginx through `HTTP_PORT`; all other ports remain internal.
 
 ## Configuration
 
@@ -321,22 +346,6 @@ error.
 The target service and the proxy profile must be running at the same time and
 share the `monitoring` network. `/healthz` checks only the proxy process and
 should continue to return HTTP 200.
-
-## Architecture decision
-
-### ADR 0001: Independent services through Compose profiles
-
-- Status: accepted
-- Date: 2026-08-11
-
-One base composition defines services, networks, and volumes. Environments are
-implemented as overrides, while optional groups are activated through the
-`proxy`, `postgres`, `redis`, `rabbitmq`, and `monitoring` profiles.
-
-This keeps the configuration in a single source of truth, while the Compose
-project name isolates environment resources. Operators must explicitly select
-profiles and must not assume that an operational dependency starts unless it
-is declared in Compose.
 
 ## License
 
