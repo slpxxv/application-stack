@@ -1,20 +1,20 @@
-# OS generated files
+### Local configuration and secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.secret
+*.pem
+*.key
+
+### Runtime data
+backups/
+coverage/
+*.log
+*.pid
+
+### Editors and operating systems
+.idea/
+.vscode/
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-./Icon?
-ehthumbs.db
 Thumbs.db
-
-# PhpStorm-Project
-/.idea/
-!/.idea/icon.svg
-/.fleet/
-*.http
-/.run/
-
-# VSCode-Project
-/.vscode/
-!/.vscode/settings.json

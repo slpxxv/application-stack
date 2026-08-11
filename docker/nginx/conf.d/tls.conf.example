@@ -1,0 +1,17 @@
+# Copy outside the image, replace paths with mounted certificates and enable as
+# tls.conf. Do not commit private keys.
+server {
+    listen 8443 ssl;
+    server_name infrastructure.example.com;
+
+    ssl_certificate /run/tls/fullchain.pem;
+    ssl_certificate_key /run/tls/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_cache shared:SSL:10m;
+
+    location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+    }
+}
+

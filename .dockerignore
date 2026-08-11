@@ -1,0 +1,14 @@
+.git
+.gitignore
+.idea
+.vscode
+.env
+.env.*
+!.env.example
+*.key
+*.log
+*.pem
+*.secret
+backups
+secrets
+

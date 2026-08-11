@@ -1,0 +1,6 @@
+#!/bin/sh
+set -eu
+
+password=$(cat "${REDIS_PASSWORD_FILE:?REDIS_PASSWORD_FILE is required}")
+REDISCLI_AUTH="$password" redis-cli --user "${REDIS_USER:-infrastructure}" ping | grep -qx PONG
+

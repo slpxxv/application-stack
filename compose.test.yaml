@@ -1,0 +1,23 @@
+services:
+  proxy:
+    restart: "no"
+  postgres:
+    restart: "no"
+  redis:
+    restart: "no"
+  rabbitmq:
+    restart: "no"
+  postgres-exporter:
+    restart: "no"
+  redis-exporter:
+    restart: "no"
+  prometheus:
+    restart: "no"
+  grafana:
+    restart: "no"
+  loki:
+    restart: "no"
+  alloy:
+    restart: "no"
+  cadvisor:
+    restart: "no"

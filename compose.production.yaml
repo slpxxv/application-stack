@@ -1,0 +1,43 @@
+x-small: &small
+  deploy:
+    resources:
+      limits:
+        cpus: "0.50"
+        memory: 512M
+      reservations:
+        memory: 128M
+
+x-medium: &medium
+  deploy:
+    resources:
+      limits:
+        cpus: "1.00"
+        memory: 1G
+      reservations:
+        memory: 256M
+
+services:
+  proxy:
+    <<: *small
+    ports:
+      - ${HTTP_PORT}:8080
+  postgres:
+    <<: *medium
+  redis:
+    <<: *small
+  rabbitmq:
+    <<: *medium
+  postgres-exporter:
+    <<: *small
+  redis-exporter:
+    <<: *small
+  prometheus:
+    <<: *medium
+  grafana:
+    <<: *small
+  loki:
+    <<: *medium
+  alloy:
+    <<: *small
+  cadvisor:
+    <<: *small

@@ -1,0 +1,282 @@
+name: infrastructure
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  proxy:
+    <<: *service-defaults
+    profiles: [proxy]
+    build:
+      context: docker/nginx
+      args:
+        NGINX_IMAGE: ${NGINX_IMAGE}
+    image: ${NGINX_RUNTIME_IMAGE:-infrastructure-nginx:${INFRA_IMAGE_TAG:-local}}
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/cache/nginx:size=32m,uid=101,gid=101
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+    healthcheck:
+      test: [CMD, curl, --fail, --silent, http://127.0.0.1:8080/healthz]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks: [public, monitoring]
+
+  postgres:
+    <<: *service-defaults
+    profiles: [postgres]
+    build:
+      context: docker/postgres
+      args:
+        POSTGRES_IMAGE: ${POSTGRES_IMAGE}
+    image: ${POSTGRES_RUNTIME_IMAGE:-infrastructure-postgres:${INFRA_IMAGE_TAG:-local}}
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGDATA: /var/lib/postgresql/18/docker
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /run/postgresql:size=16m,uid=70,gid=70
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ${SECRETS_PATH}/postgres_password:/run/secrets/postgres_password:ro
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [data, monitoring]
+
+  redis:
+    <<: *service-defaults
+    profiles: [redis]
+    build:
+      context: docker/redis
+      args:
+        REDIS_IMAGE: ${REDIS_IMAGE}
+    image: ${REDIS_RUNTIME_IMAGE:-infrastructure-redis:${INFRA_IMAGE_TAG:-local}}
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      REDIS_USER: ${REDIS_USER}
+      REDIS_PASSWORD_FILE: /run/secrets/redis_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - redis_data:/data
+      - ${SECRETS_PATH}/redis_password:/run/secrets/redis_password:ro
+    healthcheck:
+      test: [CMD, /usr/local/bin/redis-healthcheck]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks: [data, monitoring]
+
+  rabbitmq:
+    <<: *service-defaults
+    profiles: [rabbitmq]
+    build:
+      context: docker/rabbitmq
+      args:
+        RABBITMQ_IMAGE: ${RABBITMQ_IMAGE}
+    image: ${RABBITMQ_RUNTIME_IMAGE:-infrastructure-rabbitmq:${INFRA_IMAGE_TAG:-local}}
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETGID, SETUID]
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /var/log/rabbitmq:size=32m,uid=999,gid=999
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ${SECRETS_PATH}/rabbitmq_password:/run/secrets/rabbitmq_password:ro
+      - ./docker/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./docker/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+    healthcheck:
+      test: [CMD, rabbitmq-diagnostics, -q, ping]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks: [data, monitoring]
+
+  postgres-exporter:
+    <<: *service-defaults
+    profiles: [postgres]
+    image: ${POSTGRES_EXPORTER_IMAGE}
+    environment:
+      DATA_SOURCE_URI: postgres:5432/${POSTGRES_DB}?sslmode=disable
+      DATA_SOURCE_USER: ${POSTGRES_USER}
+      DATA_SOURCE_PASS_FILE: /run/secrets/postgres_password
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - ${SECRETS_PATH}/postgres_password:/run/secrets/postgres_password:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [data, monitoring]
+
+  redis-exporter:
+    <<: *service-defaults
+    profiles: [redis]
+    image: ${REDIS_EXPORTER_IMAGE}
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_PASSWORD_FILE: /run/secrets/redis_exporter_passwords.json
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    volumes:
+      - ${SECRETS_PATH}/redis_exporter_passwords.json:/run/secrets/redis_exporter_passwords.json:ro
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [data, monitoring]
+
+  prometheus:
+    <<: *service-defaults
+    profiles: [monitoring]
+    image: ${PROMETHEUS_IMAGE}
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION}
+      - --web.enable-lifecycle
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - prometheus_data:/prometheus
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: [CMD, /bin/prometheus, --version]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks: [monitoring]
+
+  loki:
+    <<: *service-defaults
+    profiles: [monitoring]
+    image: ${LOKI_IMAGE}
+    command: [-config.file=/etc/loki/config.yaml, -config.expand-env=true]
+    environment:
+      LOKI_RETENTION: ${LOKI_RETENTION}
+    read_only: true
+    user: "10001:10001"
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - loki_data:/loki
+      - ./docker/loki/config.yaml:/etc/loki/config.yaml:ro
+    healthcheck:
+      test: [CMD, /usr/bin/loki, -version]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks: [monitoring]
+
+  grafana:
+    <<: *service-defaults
+    profiles: [monitoring]
+    image: ${GRAFANA_IMAGE}
+    environment:
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    read_only: true
+    user: "472:472"
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infrastructure/monitoring/dashboards:/var/lib/grafana/dashboards:ro
+      - ${SECRETS_PATH}/grafana_admin_password:/run/secrets/grafana_admin_password:ro
+    healthcheck:
+      test: [CMD-SHELL, wget -q -O- http://127.0.0.1:3000/api/health >/dev/null]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_healthy
+    networks: [monitoring]
+
+  alloy:
+    <<: *service-defaults
+    profiles: [monitoring]
+    image: ${ALLOY_IMAGE}
+    command: [run, /etc/alloy/config.alloy, --storage.path=/var/lib/alloy/data]
+    user: "0:0"
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+      - /var/lib/alloy:size=64m,mode=0750
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks: [monitoring]
+
+  cadvisor:
+    <<: *service-defaults
+    profiles: [monitoring]
+    image: ${CADVISOR_IMAGE}
+    privileged: true
+    read_only: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    networks: [monitoring]
+
+networks:
+  public: {}
+  data:
+    internal: true
+  monitoring:
+    internal: true
+
+volumes:
+  postgres_data: {}
+  redis_data: {}
+  rabbitmq_data: {}
+  prometheus_data: {}
+  grafana_data: {}
+  loki_data: {}

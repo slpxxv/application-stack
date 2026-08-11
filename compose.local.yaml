@@ -1,0 +1,36 @@
+services:
+  proxy:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${HTTP_PORT}:8080
+  postgres:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${POSTGRES_PORT}:5432
+  redis:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${REDIS_PORT}:6379
+  rabbitmq:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${RABBITMQ_PORT}:5672
+      - 127.0.0.1:${RABBITMQ_MANAGEMENT_PORT}:15672
+  postgres-exporter:
+    restart: "no"
+  redis-exporter:
+    restart: "no"
+  prometheus:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${PROMETHEUS_PORT}:9090
+  grafana:
+    restart: "no"
+    ports:
+      - 127.0.0.1:${GRAFANA_PORT}:3000
+  loki:
+    restart: "no"
+  alloy:
+    restart: "no"
+  cadvisor:
+    restart: "no"
