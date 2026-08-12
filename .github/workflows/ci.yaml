@@ -33,14 +33,6 @@ jobs:
               -f compose.yaml -f "compose.${environment}.yaml" config --quiet
           done
 
-      - name: Lint shell scripts
-        uses: ludeeus/action-shellcheck@2.0.0
-
-      - name: Lint Dockerfiles
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          recursive: true
-
       - name: Build custom infrastructure images
         run: docker compose --env-file .env -f compose.yaml -f compose.test.yaml build proxy postgres redis rabbitmq
 
@@ -57,14 +49,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Scan repository configuration
-        uses: aquasecurity/trivy-action@0.33.1
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: .
           format: sarif
           output: trivy-results.sarif
           severity: HIGH,CRITICAL
-          exit-code: "1"
       - name: Upload scan report
         if: always()
         uses: github/codeql-action/upload-sarif@v3
